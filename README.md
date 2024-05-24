@@ -17,5 +17,5 @@ Resources:
 * IAM Role (Assumed by EC2)
 * IAM Policy (S3:* FullAccess)
   
-<a target="_blank" rel="noreferrer"> <img src="https://github.com/girobh/AWS_IaC_Metro_College/blob/main/Terraform%20Projects_AWS-rev01-01.png" alt="metroc"/> </a>
-<a target="_blank" rel="noreferrer"> <img src="https://github.com/girobh/AWS_IaC_Metro_College/blob/main/Terraform%20Projects_AWS-rev01-02.png" alt="metroc"/> </a>
+<a target="_blank" rel="noreferrer"> <img src="https://github.com/girobh/AWS_CFN_Metro_College/blob/main/CloudFormation%20Projects_AWS-rev01-01.png" alt="metroc"/> </a>
+<a target="_blank" rel="noreferrer"> <img src="https://github.com/girobh/AWS_CFN_Metro_College/blob/main/CloudFormation%20Projects_AWS-rev01-02.png" alt="metroc"/> </a>
