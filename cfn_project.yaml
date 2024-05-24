@@ -1,0 +1,275 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: CloudFormation template to create VPC with public subnets, an IGW, route tables, security groups, ASG, ALB, S3 Bucket, IAM Roles and Policies, and RDS Subnet Group.
+
+Resources:
+  # VPC
+  LabVPC:
+    Type: 'AWS::EC2::VPC'
+    Properties: 
+      CidrBlock: '172.30.0.0/16'
+      EnableDnsHostnames: true
+      Tags: 
+        - Key: Name
+          Value: 'Lab VPC'
+
+  # Public Subnets
+  PublicSubnet1:
+    Type: 'AWS::EC2::Subnet'
+    Properties: 
+      VpcId: !Ref LabVPC
+      CidrBlock: '172.30.1.0/24'
+      AvailabilityZone: 'us-east-2a'
+      Tags: 
+        - Key: Name
+          Value: 'Public Subnet 1'
+
+  PublicSubnet2:
+    Type: 'AWS::EC2::Subnet'
+    Properties: 
+      VpcId: !Ref LabVPC
+      CidrBlock: '172.30.2.0/24'
+      AvailabilityZone: 'us-east-2b'
+      Tags: 
+        - Key: Name
+          Value: 'Public Subnet 2'
+
+  # Internet Gateway
+  InternetGateway:
+    Type: 'AWS::EC2::InternetGateway'
+    Properties: 
+      Tags: 
+        - Key: Name
+          Value: 'Internet Gateway'
+
+  AttachGateway:
+    Type: 'AWS::EC2::VPCGatewayAttachment'
+    Properties: 
+      VpcId: !Ref LabVPC
+      InternetGatewayId: !Ref InternetGateway
+
+  # Route Table
+  PublicRouteTable:
+    Type: 'AWS::EC2::RouteTable'
+    Properties: 
+      VpcId: !Ref LabVPC
+      Tags: 
+        - Key: Name
+          Value: 'Public Route Table'
+
+  PublicRoute:
+    Type: 'AWS::EC2::Route'
+    Properties: 
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: '0.0.0.0/0'
+      GatewayId: !Ref InternetGateway
+
+  SubnetRouteTableAssociation1:
+    Type: 'AWS::EC2::SubnetRouteTableAssociation'
+    Properties: 
+      SubnetId: !Ref PublicSubnet1
+      RouteTableId: !Ref PublicRouteTable
+
+  SubnetRouteTableAssociation2:
+    Type: 'AWS::EC2::SubnetRouteTableAssociation'
+    Properties: 
+      SubnetId: !Ref PublicSubnet2
+      RouteTableId: !Ref PublicRouteTable
+
+  # Security Groups
+  EC2SecurityGroup:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties: 
+      GroupDescription: 'Security group for EC2 instances'
+      VpcId: !Ref LabVPC
+      SecurityGroupIngress: 
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: '0.0.0.0/0'
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: '0.0.0.0/0'
+      Tags: 
+        - Key: Name
+          Value: 'EC2-SG'
+
+  ALBSecurityGroup:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties: 
+      GroupDescription: 'Security group for Application Load Balancer'
+      VpcId: !Ref LabVPC
+      SecurityGroupIngress: 
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: '0.0.0.0/0'
+      Tags: 
+        - Key: Name
+          Value: 'ALB-SG'
+
+  RDSSecurityGroup:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties: 
+      GroupDescription: 'Security group for RDS instances'
+      VpcId: !Ref LabVPC
+      SecurityGroupIngress: 
+        - IpProtocol: tcp
+          FromPort: 3306
+          ToPort: 3306
+          CidrIp: '0.0.0.0/0'
+      Tags: 
+        - Key: Name
+          Value: 'RDS-SG'
+
+  # Launch Configuration
+  EC2LaunchConfig:
+    Type: 'AWS::AutoScaling::LaunchConfiguration'
+    Properties: 
+      ImageId: 'ami-0ddda618e961f2270' # Placeholder, use a valid AMI ID
+      InstanceType: 't2.micro'
+      KeyName: 'devops-project'
+      AssociatePublicIpAddress: true
+      SecurityGroups: 
+        - !Ref EC2SecurityGroup
+
+  # Auto Scaling Group
+  MyASG:
+    Type: 'AWS::AutoScaling::AutoScalingGroup'
+    Properties: 
+      LaunchConfigurationName: !Ref EC2LaunchConfig
+      MinSize: 2
+      MaxSize: 5
+      DesiredCapacity: 2
+      VPCZoneIdentifier: 
+        - !Ref PublicSubnet1
+        - !Ref PublicSubnet2
+      TargetGroupARNs: 
+        - !Ref ALBTargetGroup
+
+  # Application Load Balancer
+  MyALB:
+    Type: 'AWS::ElasticLoadBalancingV2::LoadBalancer'
+    Properties: 
+      Name: 'my-application-load-balancer'
+      Subnets: 
+        - !Ref PublicSubnet1
+        - !Ref PublicSubnet2
+      SecurityGroups: 
+        - !Ref ALBSecurityGroup
+      Scheme: internet-facing
+      LoadBalancerAttributes: 
+        - Key: idle_timeout.timeout_seconds
+          Value: '60'
+      Tags: 
+        - Key: Name
+          Value: 'my-application-load-balancer'
+
+  # Target Group
+  ALBTargetGroup:
+    Type: 'AWS::ElasticLoadBalancingV2::TargetGroup'
+    Properties: 
+      Name: 'my-target-group'
+      Port: 80
+      Protocol: HTTP
+      VpcId: !Ref LabVPC
+      HealthCheckProtocol: HTTP
+      HealthCheckPort: '80'
+      HealthCheckPath: '/'
+      Matcher: 
+        HttpCode: '200'
+      TargetType: instance
+
+  # ALB Listener
+  ALBListener:
+    Type: 'AWS::ElasticLoadBalancingV2::Listener'
+    Properties: 
+      LoadBalancerArn: !Ref MyALB
+      Port: 80
+      Protocol: HTTP
+      DefaultActions: 
+        - Type: forward
+          TargetGroupArn: !Ref ALBTargetGroup
+
+  # S3 Bucket
+  IgorProjectBucketS3:
+    Type: 'AWS::S3::Bucket'
+    Properties: 
+      BucketName: 'igor-project-bucket-s3'
+      AccessControl: Private
+
+  # IAM Role
+  IgorRole:
+    Type: 'AWS::IAM::Role'
+    Properties: 
+      RoleName: 'igor_ec2_role'
+      AssumeRolePolicyDocument: 
+        Version: '2012-10-17'
+        Statement: 
+          - Effect: Allow
+            Principal: 
+              Service: 
+                - ec2.amazonaws.com
+            Action: 'sts:AssumeRole'
+      Path: /
+
+  # IAM Policy
+  IgorS3FullAccessPolicy:
+    Type: 'AWS::IAM::Policy'
+    Properties: 
+      PolicyName: 'igor_s3_full_access_policy'
+      PolicyDocument: 
+        Version: '2012-10-17'
+        Statement: 
+          - Effect: Allow
+            Action: 's3:*'
+            Resource: '*'
+      Roles: 
+        - !Ref IgorRole
+
+  # Private Subnets
+  PrivateSubnet1:
+    Type: 'AWS::EC2::Subnet'
+    Properties: 
+      VpcId: !Ref LabVPC
+      CidrBlock: '172.30.3.0/24'
+      AvailabilityZone: 'us-east-2a'
+      Tags: 
+        - Key: Name
+          Value: 'Private Subnet 1'
+
+  PrivateSubnet2:
+    Type: 'AWS::EC2::Subnet'
+    Properties: 
+      VpcId: !Ref LabVPC
+      CidrBlock: '172.30.4.0/24'
+      AvailabilityZone: 'us-east-2b'
+      Tags: 
+        - Key: Name
+          Value: 'Private Subnet 2'
+
+# RDS Subnet Group
+  MyDBSubnetGroup:
+    Type: 'AWS::RDS::DBSubnetGroup'
+    Properties: 
+      DBSubnetGroupName: 'my-db-subnet-group'
+      DBSubnetGroupDescription: 'Subnet group for RDS'
+      SubnetIds: 
+        - !Ref PrivateSubnet1
+        - !Ref PrivateSubnet2
+
+# RDS Instance
+  IgorDatabase:
+    Type: 'AWS::RDS::DBInstance'
+    Properties: 
+      DBInstanceIdentifier: 'igor-database'
+      AllocatedStorage: 20
+      StorageType: 'gp2'
+      Engine: 'mysql'
+      EngineVersion: '5.7'
+      DBInstanceClass: 'db.t3.micro'
+      MasterUsername: 'admin'
+      MasterUserPassword: 'Metro123'
+      DBSubnetGroupName: !Ref MyDBSubnetGroup
+      VPCSecurityGroups: 
+        - !Ref RDSSecurityGroup
